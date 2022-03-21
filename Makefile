@@ -1,6 +1,6 @@
 CC := g++ -g
 exe := hw1
-OBJS := file_info.o proc_info.o hw1.o
+OBJS := filter.o file_info.o proc_info.o hw1.o
 
 all: $(OBJS)
 	$(CC) $^ -o $(exe)

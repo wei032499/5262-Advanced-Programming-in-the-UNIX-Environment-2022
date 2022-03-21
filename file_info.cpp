@@ -93,7 +93,7 @@ struct file_info *getfileinfo(const char *fd, string path)
             return NULL;
         }
         stringstream inode_ss;
-        ino_t inode = getinode(info->name.c_str());
+        ino_t inode = getinode(info->path.c_str());
         if (inode != -1)
             inode_ss << inode;
 

@@ -1,4 +1,7 @@
 */hw1.ipch
+*/filter.ipch
+*/proc_info.ipch
+*/file_info.ipch
 */mmap_address.bin
 *.o
 hw1

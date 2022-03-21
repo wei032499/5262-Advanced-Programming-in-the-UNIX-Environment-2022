@@ -1,14 +1,12 @@
 #include <proc_info.h>
 #include <file_info.h>
+#include <filter.h>
 
 #include <iostream>
 #include <string>
 #include <string.h>
 #include <vector>
-#include <algorithm>
 #include <dirent.h>
-
-#include <unistd.h>
 
 #include <fstream>
 #include <errno.h>
@@ -19,46 +17,6 @@
 using namespace std;
 
 #define FORMAT "%-20s\t%-10s\t%-15s\t%-8s\t%-8s\t%-10s\t%s\n"
-
-struct filter
-{
-    vector<string> command;
-    vector<string> type;
-    vector<string> filename;
-};
-
-struct filter parse(int argc, char *argv[])
-{
-    struct filter filter;
-    vector<string> valid_types{"REG", "CHR", "DIR", "FIFO", "SOCK", "unknown"};
-    int opt;
-    while ((opt = getopt(argc, argv, "c:t:f:")) != -1)
-    {
-        switch (opt)
-        {
-        case 'c':
-            filter.command.push_back(optarg);
-            break;
-        case 't':
-            if (find(valid_types.begin(), valid_types.end(), optarg) != valid_types.end())
-                filter.type.push_back(optarg);
-            else
-            {
-                cout << "Invalid TYPE option" << endl;
-                exit(EXIT_FAILURE);
-            }
-            break;
-        case 'f':
-            filter.filename.push_back(optarg);
-            break;
-        default: /* '?' */
-            fprintf(stderr, "Usage: %s [-c command line] [-t TYPE] [-c filenames]\n", argv[0]);
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    return filter;
-}
 
 bool is_process(const struct dirent *dirp)
 {
@@ -93,7 +51,7 @@ bool traverse_fd(struct proc_info *proc)
                 continue;
 
             struct stat s;
-            if (stat(("/proc/" + proc->pid + "/fd/" + dirp->d_name).c_str(), &s) == -1)
+            if (lstat(("/proc/" + proc->pid + "/fd/" + dirp->d_name).c_str(), &s) == -1)
                 continue;
 
             if ((s.st_mode & S_IREAD) && (s.st_mode & S_IWRITE))
@@ -117,7 +75,7 @@ bool traverse_fd(struct proc_info *proc)
     return true;
 }
 
-bool parse_maps(struct proc_info *proc)
+void parse_maps(struct proc_info *proc)
 {
     string line;
 
@@ -156,23 +114,24 @@ bool parse_maps(struct proc_info *proc)
     maps.close();
 }
 
-void dump_info(struct proc_info *proc)
+void dump_info(struct proc_info *proc, struct filter *filter)
 {
     for (std::vector<struct file_info *>::iterator it = proc->file_info.begin(); it != proc->file_info.end(); ++it)
-        printf(FORMAT,
-               proc->command.c_str(),
-               proc->pid.c_str(),
-               proc->username.c_str(),
-               (*it)->fd.c_str(),
-               (*it)->type.c_str(),
-               (*it)->node.c_str(),
-               ((*it)->name + (*it)->error).c_str());
+        if (valid_finfo(filter, (*it)))
+            printf(FORMAT,
+                   proc->command.c_str(),
+                   proc->pid.c_str(),
+                   proc->username.c_str(),
+                   (*it)->fd.c_str(),
+                   (*it)->type.c_str(),
+                   (*it)->node.c_str(),
+                   ((*it)->name + (*it)->error).c_str());
 }
 
-void traverse_proc(char *pid)
+void traverse_proc(char *pid, struct filter *filter)
 {
     struct proc_info *proc = getprocinfo(pid);
-    if (proc == NULL)
+    if (proc == NULL || !valid_param(proc->command, &filter->command))
         return;
 
     struct file_info *file_info;
@@ -208,13 +167,13 @@ void traverse_proc(char *pid)
         return;
     }
 
-    dump_info(proc);
+    dump_info(proc, filter);
     destroy_procinfo(proc);
 }
 
 int main(int argc, char *argv[])
 {
-    struct filter filter = parse(argc, argv);
+    struct filter filter = parse_filter(argc, argv);
 
     printf(FORMAT, "COMMAND", "PID", "USER", "FD", "TYPE", "NODE", "NAME");
 
@@ -224,7 +183,7 @@ int main(int argc, char *argv[])
         if (is_process(dirp))
         {
             char *pid = dirp->d_name;
-            traverse_proc(pid);
+            traverse_proc(pid, &filter);
         }
     closedir(dir);
 }
