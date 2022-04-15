@@ -1,7 +1,6 @@
-*/hw1.ipch
-*/filter.ipch
-*/proc_info.ipch
-*/file_info.ipch
-*/mmap_address.bin
-*.o
-hw1
+*/*.ipch
+*/*.o
+*/*.bin
+.vscode/
+HW1/hw1
+HW2/logger
