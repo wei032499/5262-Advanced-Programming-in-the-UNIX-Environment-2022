@@ -1,4 +1,4 @@
-CC := g++
+CC := gcc
 EXE := logger
 EXE_OBJS := hw2.o
 
@@ -7,10 +7,10 @@ all: $(EXE) logger.so
 $(EXE): $(EXE_OBJS)
 	$(CC) $? -o $(EXE)
 
-logger.so: logger.cpp
+logger.so: logger.c
 	$(CC) $? -o $@ -ldl -shared -fPIC
 
-%.o: %.cpp
+%.o: %.c
 	$(CC) -c $? -I . -o $@
 
 .PHONY: clean clean_all

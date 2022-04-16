@@ -1,16 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <iostream>
-#include <vector>
 #include <unistd.h>
-
-using namespace std;
 
 int main(int argc, char *argv[])
 {
     FILE *output = stderr;
     char *cmd;
-    vector<char *> cmd_args_vec;
     setenv("LD_PRELOAD", "./logger.so", 1);
 
     if (argc <= 1)
@@ -57,13 +52,11 @@ int main(int argc, char *argv[])
 
     setenv("output_fd", buffer, 1);
 
+    char *cmd_args[argc - optind + 1];
+
     for (int i = optind; i < argc; i++)
-        cmd_args_vec.push_back(argv[i]);
-
-    char *cmd_args[cmd_args_vec.size() + 1];
-    copy(cmd_args_vec.begin(), cmd_args_vec.end(), cmd_args);
-
-    cmd_args[cmd_args_vec.size()] = NULL;
+        cmd_args[i - optind] = argv[i];
+    cmd_args[argc - optind] = NULL;
 
     if (execvp(cmd_args[0], cmd_args) == -1)
     {
