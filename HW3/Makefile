@@ -1,24 +1,53 @@
-CC := gcc
-CC_FLAG := -c -g -Wall -fno-stack-protector -fPIC -nostdlib
+libmini.so: start.asm libmini.h libmini.c libmini64.asm
+	yasm -f elf64 -DYASM -D__x86_64__ -DPIC libmini64.asm -o libmini64.o
+	gcc -c -g -Wall -fno-stack-protector -fPIC -nostdlib libmini.c
+	ld -shared -o libmini.so libmini64.o libmini.o
+	yasm -f elf64 -DYASM -D__x86_64__ -DPIC start.asm -o start.o
 
-ASM64 := yasm -f elf64 -DYASM -D__x86_64__ -DPIC
+write1: write1.c libmini.so
+	gcc -c -g -Wall -fno-stack-protector -nostdlib -I. -I.. -DUSEMINI write1.c
+	ld -m elf_x86_64 --dynamic-linker /lib64/ld-linux-x86-64.so.2 -o write1 write1.o start.o -L. -L.. -lmini
 
-BUILD_SO := libmini.so
+alarm1: alarm1.c libmini.so
+	gcc -c -g -Wall -fno-stack-protector -nostdlib -I. -I.. -DUSEMINI alarm1.c
+	ld -m elf_x86_64 --dynamic-linker /lib64/ld-linux-x86-64.so.2 -o alarm1 alarm1.o start.o -L. -L.. -lmini
 
-all: libmini64.o libmini.o
-	ld -shared -o $(BUILD_SO) $^
+alarm2: alarm2.c libmini.so
+	gcc -c -g -Wall -fno-stack-protector -nostdlib -I. -I.. -DUSEMINI alarm2.c
+	ld -m elf_x86_64 --dynamic-linker /lib64/ld-linux-x86-64.so.2 -o alarm2 alarm2.o start.o -L. -L.. -lmini
 
-%.o: %.asm
-	$(ASM64) $? -o $@
+alarm3: alarm3.c libmini.so
+	gcc -c -g -Wall -fno-stack-protector -nostdlib -I. -I.. -DUSEMINI alarm3.c
+	ld -m elf_x86_64 --dynamic-linker /lib64/ld-linux-x86-64.so.2 -o alarm3 alarm3.o start.o -L. -L.. -lmini
 
-%.o: %.c
-	$(CC) $(CC_FLAG) $? -o $@
-
-.PHONY: clean clean_all
+jmp1: jmp1.c libmini.so
+	gcc -o jmp1.o -c -g -Wall -fno-stack-protector -nostdlib -I. -I.. -DUSEMINI jmp1.c
+	ld -m elf_x86_64 --dynamic-linker /lib64/ld-linux-x86-64.so.2 -o jmp1 jmp1.o start.o -L. -L.. -lmini
 
 clean:
-	rm -f *.o
+	rm -f *.s *.o *.so write1 alarm1 alarm2 alarm3 jmp1
 
-clean_all:
-	rm -f *.o
-	rm -f $(BUILD_SO)
+# CC := gcc
+# CC_FLAG := -c -g -Wall -fno-stack-protector -fPIC -nostdlib
+
+# ASM64 := yasm -f elf64 -DYASM -D__x86_64__ -DPIC
+
+# BUILD_SO := libmini.so
+
+# all: libmini64.o libmini.o
+# 	ld -shared -o $(BUILD_SO) $^
+
+# %.o: %.asm
+# 	$(ASM64) $? -o $@
+
+# %.o: %.c
+# 	$(CC) $(CC_FLAG) $? -o $@
+
+# .PHONY: clean clean_all
+
+# clean:
+# 	rm -f *.o
+
+# clean_all:
+# 	rm -f *.o
+# 	rm -f $(BUILD_SO)
