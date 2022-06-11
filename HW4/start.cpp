@@ -43,15 +43,9 @@ int start()
     if (program.pid == 0) // child process
     {
         if (ptrace(PTRACE_TRACEME, 0, NULL, NULL) < 0)
-        {
-            perror("** start ptrace error ");
-            return 0;
-        }
-        if (execv(program.path.c_str(), program.argv) == -1)
-        {
-            perror("** execvp error ");
-            exit(0);
-        }
+            errquit("** start ptrace error ");
+        if (execvp(program.path.c_str(), program.argv) == -1)
+            errquit("** execvp error ");
     }
     else // parent
     {
