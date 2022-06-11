@@ -99,16 +99,26 @@ int insbreak(vector<string> &args)
 
 int checkbp() // return bp idx, or -1 if not bp
 {
+
     if (ptrace(PTRACE_GETREGS, program.pid, 0, &program.regs) != 0)
     {
         errquit("** ptrace error ");
         return -1;
     }
+
+    byte data[sizeof(long)];
+    *data = ptrace(PTRACE_PEEKDATA, program.pid, program.regs.rip - 1, NULL);
+
+    for (auto &bp : program.bplist)
+        change_byte(program.base_address + bp.addr, 0xcc);
+
+    // printf("%llx %llx\n", program.regs.rip - 1 - program.base_address, data[0]);
+
     int bpid = 0;
     for (auto &bp : program.bplist)
     {
         if (program.regs.rip - 1 == program.base_address + bp.addr)
-            return bpid;
+            return data[0] == 0xcc ? bpid : -1;
         bpid++;
     }
     // unordered_map<unsigned long long, vector<struct bp>::const_iterator>::const_iterator got = program.bpmap.find(program.regs.rip - 1 - program.base_address);
@@ -128,19 +138,18 @@ int restore(int bpid)
     /* restore break point */
     change_byte(program.base_address + program.bplist[bpid].addr, program.bplist[bpid].ovalue);
 
+    // ptrace(PTRACE_SINGLESTEP, program.pid, NULL, NULL);
+
+    // if (waitpid(program.pid, NULL, 0) >= 0)
+    //     change_byte(program.base_address + program.bplist[bpid].addr, 0xcc);
+
     /* set registers */
     program.regs.rip = program.regs.rip - 1;
-    program.regs.rdx = program.regs.rax;
     if (ptrace(PTRACE_SETREGS, program.pid, 0, &program.regs) != 0)
     {
         fprintf(stderr, "** ptrace(SETREGS)");
         return -1;
     }
-
-    ptrace(PTRACE_SINGLESTEP, program.pid, NULL, NULL);
-
-    if (waitpid(program.pid, NULL, 0) >= 0)
-        change_byte(program.base_address + program.bplist[bpid].addr, 0xcc);
 
     return 0;
 }
@@ -155,30 +164,38 @@ int inscont(vector<string> &args)
         fprintf(stderr, "** program is NOT running.\n");
         return -1;
     }
+    ptrace(PTRACE_SINGLESTEP, program.pid, NULL, NULL);
+
+    if (waitpid(program.pid, NULL, 0) < 0)
+        errquit("** cont step error ");
+
     int bpid = checkbp();
-    if (bpid != -1)
+    if (bpid == -1)
+    {
+        ptrace(PTRACE_CONT, program.pid, NULL, NULL);
+
+        int status;
+
+        if (waitpid(program.pid, &status, 0) < 0)
+        {
+            perror("** inscont error ");
+        }
+        else if (WIFEXITED(status))
+        {
+            if (WIFSIGNALED(status))
+                printf("** %d stop by signal", program.pid);
+            else
+                printf("** chlid process %d terminiated normally (code %d)\n", program.pid, status);
+            program.state = LOADED;
+            return 0;
+        }
+    }
+
+    if ((bpid = checkbp()) != -1)
+    {
         restore(bpid);
 
-    ptrace(PTRACE_CONT, program.pid, NULL, NULL);
-
-    int status;
-
-    if (waitpid(program.pid, &status, 0) < 0)
-    {
-        perror("** inscont error ");
-    }
-    else if (WIFEXITED(status))
-    {
-        if (WIFSIGNALED(status))
-            printf("** %d stop by signal", program.pid);
-        else
-            printf("** chlid process %d terminiated normally (code %d)\n", program.pid, status);
-        program.state = LOADED;
-    }
-    else if ((bpid = checkbp()) != -1)
-    {
         printf("** breakpoint @");
-
         int count = capstone_disasm(program.bplist[bpid].addr, program.text.size - (program.bplist[bpid].addr - program.text.entry), 1);
     }
 
@@ -204,6 +221,7 @@ int insdelete(vector<string> &args)
 
     change_byte(program.base_address + program.bplist[bpid].addr, program.bplist[bpid].ovalue);
     program.bplist.erase(program.bplist.begin() + bpid);
+    printf("** breakpoint %d deleted\n", bpid);
     return 0;
 }
 int insdisasm(vector<string> &args)
@@ -388,11 +406,11 @@ int insgetregs(vector<string> &args)
         return -1;
     }
 
-    printf("RAX %-17llx RBX %-17llx RCX %-17llx RDX %-17llx\n", program.regs.rax, program.regs.rbx, program.regs.rcx, program.regs.rdx);
-    printf("R8  %-17llx R9  %-17llx R10 %-17llx R11 %-17llx\n", program.regs.r8, program.regs.r9, program.regs.r10, program.regs.r11);
-    printf("R10 %-17llx R13 %-17llx R14 %-17llx R15 %-17llx\n", program.regs.r12, program.regs.r13, program.regs.r14, program.regs.r15);
-    printf("RDI %-17llx RSI %-17llx RBP %-17llx RSP %-17llx\n", program.regs.rdi, program.regs.rsi, program.regs.rbp, program.regs.rsp);
-    printf("RIP %-17llx FLAGS %016llx\n", program.regs.rip, program.regs.eflags);
+    printf("RAX %-14llx RBX %-14llx RCX %-14llx RDX %-14llx\n", program.regs.rax, program.regs.rbx, program.regs.rcx, program.regs.rdx);
+    printf("R8  %-14llx R9  %-14llx R10 %-14llx R11 %-14llx\n", program.regs.r8, program.regs.r9, program.regs.r10, program.regs.r11);
+    printf("R12 %-14llx R13 %-14llx R14 %-14llx R15 %-14llx\n", program.regs.r12, program.regs.r13, program.regs.r14, program.regs.r15);
+    printf("RDI %-14llx RSI %-14llx RBP %-14llx RSP %-14llx\n", program.regs.rdi, program.regs.rsi, program.regs.rbp, program.regs.rsp);
+    printf("RIP %-14llx FLAGS %016llx\n", program.regs.rip, program.regs.eflags);
 
     return 0;
 }
@@ -404,7 +422,22 @@ int inshelp(vector<string> &args)
         return -1;
     }
 
-    printf("show this message\n");
+    printf("- break {instruction-address}: add a break point\n");
+    printf("- cont: continue execution\n");
+    printf("- delete {break-point-id}: remove a break point\n");
+    printf("- disasm addr: disassemble instructions in a file or a memory region\n");
+    printf("- dump addr: dump memory content\n");
+    printf("- exit: terminate the debugger\n");
+    printf("- get reg: get a single value from a register\n");
+    printf("- getregs: show registers\n");
+    printf("- help: show this message\n");
+    printf("- list: list break points\n");
+    printf("- load {path/to/a/program}: load a program\n");
+    printf("- run: run the program\n");
+    printf("- vmmap: show memory layout\n");
+    printf("- set reg val: get a single value to a register\n");
+    printf("- si: step into instruction\n");
+    printf("- start: start the program and stop at the first instruction\n");
 
     return 0;
 }
@@ -500,12 +533,15 @@ int insvmmap(vector<string> &args)
         int ret = fscanf(f, "%llx-%llx %s %llx %s %llx", &addr, &endaddr, premission, &offset, device, &inode);
         if (!(ret != 0 && ret != EOF))
             break;
-        if (ret > 0 && ret != EOF && inode != 0)
+        fscanf(f, "%s", filename);
+        fgets(filename + strlen(filename), 4097, f);
+        if (filename[strlen(filename) - 1] == '\n')
+            filename[strlen(filename) - 1] = '\0';
+
+        /*if (ret > 0 && ret != EOF && inode != 0)
         {
-            fscanf(f, "%s\n", filename);
-            fgets(filename + strlen(filename), 4097, f);
-            if (filename[strlen(filename) - 1] == '\n')
-                filename[strlen(filename) - 1] = '\0';
+
+
             // ret += fscanf(f, "%s\n", filename);
             // if (!(ret != 0 && ret != EOF))
             //     break;
@@ -513,10 +549,10 @@ int insvmmap(vector<string> &args)
         else
         {
             char buf[4097];
-            filename[0] = '\0'; /* no filename */
+            filename[0] = '\0';
             fgets(buf, 4097, f);
             sscanf(buf, "%s\n", filename);
-        }
+        }*/
         printf("%016llx-%016llx %c%c%c %llu        %s\n", addr, endaddr, premission[0], premission[1], premission[2], offset, filename);
     }
 
@@ -601,18 +637,28 @@ int inssi(vector<string> &args)
     if (args.size() != 0)
         fprintf(stderr, "** Instruction Error: si\n");
 
-    int bpid = checkbp();
-    if (bpid != -1)
-        restore(bpid);
-
     ptrace(PTRACE_SINGLESTEP, program.pid, NULL, NULL);
 
-    if (waitpid(program.pid, NULL, 0) >= 0 && (bpid = checkbp()) != -1)
-    {
-        printf("** breakpoint @");
+    if (waitpid(program.pid, NULL, 0) < 0)
+        errquit("** si error ");
 
+    int bpid = checkbp();
+    if (bpid != -1)
+    {
+        restore(bpid);
+
+        printf("** breakpoint @");
         int count = capstone_disasm(program.bplist[bpid].addr, program.text.size - (program.bplist[bpid].addr - program.text.entry), 1);
     }
+
+    // ptrace(PTRACE_SINGLESTEP, program.pid, NULL, NULL);
+
+    // if (waitpid(program.pid, NULL, 0) >= 0 && (bpid = checkbp()) != -1)
+    // {
+    //     printf("** breakpoint @");
+
+    //     int count = capstone_disasm(program.bplist[bpid].addr, program.text.size - (program.bplist[bpid].addr - program.text.entry), 1);
+    // }
 
     return 0;
 }
